@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026 회식 담당자 추첨</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Press Start 2P', monospace;
+  background: #000011;
+  color: #00ff41;
+  min-height: 100vh;
+  overflow-x: hidden;
+  cursor: crosshair;
+}
+
+/* ── 스캔라인 + CRT 오버레이 ── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.18) 2px,
+    rgba(0,0,0,0.18) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── 별 배경 캔버스 ── */
+#stars { position: fixed; inset: 0; z-index: 0; }
+
+.page {
+  position: relative;
+  z-index: 1;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 40px 20px 80px;
+}
+
+/* ── 헤더 ── */
+.header-wrap { text-align: center; margin-bottom: 40px; }
+
+.arcade-title {
+  font-size: clamp(14px, 3vw, 22px);
+  color: #ffe600;
+  text-shadow: 0 0 10px #ffe600, 0 0 20px #ff8800;
+  letter-spacing: 0.06em;
+  line-height: 1.8;
+  margin-bottom: 6px;
+}
+.arcade-title span {
+  display: inline-block;
+  color: #ff00cc;
+  text-shadow: 0 0 10px #ff00cc, 0 0 24px #ff00cc;
+}
+
+.team-label {
+  font-size: 11px;
+  color: #00ffff;
+  text-shadow: 0 0 8px #00ffff;
+  letter-spacing: 0.15em;
+  margin-bottom: 28px;
+  display: block;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: #00cc44;
+  text-shadow: 0 0 6px #00cc44;
+  line-height: 2.2;
+  letter-spacing: 0.04em;
+}
+
+/* ── 구분선 ── */
+.pixel-line {
+  height: 2px;
+  background: repeating-linear-gradient(90deg, #00ff41 0px, #00ff41 6px, transparent 6px, transparent 10px);
+  margin: 20px 0;
+  opacity: 0.5;
+}
+
+/* ── 레전드 ── */
+.legend {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-soft);
+  background: var(--white);
+  padding: 5px 12px;
+  border-radius: 99px;
+  box-shadow: var(--shadow-sm);
+}
+.legend-dot {
+  width: 10px; height: 10px;
+  flex-shrink: 0;
+  image-rendering: pixelated;
+}
+
+/* ── 그리드 ── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 36px;
+}
+@media (max-width: 500px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+
+.card {
+  background: #000a00;
+  border: 2px solid #1a3a1a;
+  padding: 12px 10px;
+  position: relative;
+  transition: transform 0.1s;
+  image-rendering: pixelated;
+}
+.card:hover { transform: scale(1.03); }
+
+/* 픽셀 코너 효과 */
+.card::before, .card::after {
+  content: '';
+  position: absolute;
+  width: 4px; height: 4px;
+  background: #000011;
+}
+.card::before { top: -2px; left: -2px; }
+.card::after  { bottom: -2px; right: -2px; }
+
+.card.done {
+  background: #001a00;
+  border-color: #00ff41;
+  box-shadow: inset 0 0 12px rgba(0,255,65,0.1), 0 0 8px rgba(0,255,65,0.2);
+}
+.card.first {
+  background: #1a1500;
+  border-color: #ffe600;
+  box-shadow: inset 0 0 12px rgba(255,230,0,0.1), 0 0 8px rgba(255,230,0,0.25);
+}
+.card.repeat {
+  background: #0d0020;
+  border-color: #cc00ff;
+  box-shadow: inset 0 0 12px rgba(204,0,255,0.1), 0 0 8px rgba(204,0,255,0.2);
+}
+.card.empty {
+  background: #050505;
+  border-color: #1a1a2a;
+}
+
+.card-month {
+  font-size: 12px;
+  margin-bottom: 8px;
+  letter-spacing: 0.08em;
+}
+.card.done   .card-month { color: #00aa28; }
+.card.first  .card-month { color: #aa9900; }
+.card.repeat .card-month { color: #880099; }
+.card.empty  .card-month { color: #222244; }
+
+.card-name {
+  font-size: 13px;
+  line-height: 1.8;
+  word-break: keep-all;
+}
+.card.done   .card-name { color: #00ff41; text-shadow: 0 0 8px #00ff41, 0 0 2px #fff; }
+.card.first  .card-name { color: #ffe600; text-shadow: 0 0 8px #ffe600, 0 0 2px #fff; }
+.card.repeat .card-name { color: #ee44ff; text-shadow: 0 0 8px #ee44ff, 0 0 2px #fff; }
+.card.empty  .card-name { color: #2a2a55; font-size: 11px; }
+
+.card-badge {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 9px;
+  padding: 3px 6px;
+  letter-spacing: 0.06em;
+}
+.card.done   .card-badge { background: #003300; color: #00ff41; border: 1px solid #00ff41; }
+.card.repeat .card-badge { background: #1a0030; color: #cc00ff; border: 1px solid #cc00ff; }
+
+/* ── 추첨 버튼 ── */
+.draw-wrap { text-align: center; margin-bottom: 32px; }
+
+.draw-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  color: #000011;
+  background: #ffe600;
+  border: none;
+  padding: 16px 28px;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  position: relative;
+  /* 픽셀 그림자로 3D 효과 */
+  box-shadow:
+    4px 0 0 #aa9900,
+    0 4px 0 #aa9900,
+    4px 4px 0 #aa9900,
+    8px 0 0 #665800,
+    0 8px 0 #665800,
+    8px 8px 0 #665800;
+  transition: box-shadow 0.05s, transform 0.05s;
+  text-shadow: none;
+}
+.draw-btn:hover {
+  background: #fff200;
+  box-shadow:
+    4px 0 0 #ccc000,
+    0 4px 0 #ccc000,
+    4px 4px 0 #ccc000,
+    8px 0 0 #888000,
+    0 8px 0 #888000,
+    8px 8px 0 #888000;
+}
+.draw-btn:active {
+  transform: translate(4px, 4px);
+  box-shadow:
+    2px 0 0 #aa9900,
+    0 2px 0 #aa9900,
+    2px 2px 0 #aa9900;
+}
+.draw-btn:disabled {
+  background: #333300;
+  color: #666600;
+  cursor: not-allowed;
+  box-shadow: 2px 0 0 #222200, 0 2px 0 #222200, 2px 2px 0 #222200;
+  transform: none;
+}
+
+/* ── 완료 메시지 ── */
+.done-notice {
+  display: none;
+  text-align: center;
+  font-size: 9px;
+  color: #00ffff;
+  text-shadow: 0 0 10px #00ffff;
+  line-height: 2.5;
+  letter-spacing: 0.08em;
+  padding: 20px;
+  border: 2px solid #00ffff;
+  box-shadow: 0 0 20px rgba(0,255,255,0.3), inset 0 0 20px rgba(0,255,255,0.05);
+}
+.done-notice.visible { display: block; }
+
+/* ── 깜빡이 애니메이션 ── */
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.blink { animation: blink 0.8s step-end infinite; }
+
+/* ── 팝인 ── */
+@keyframes pixelPop {
+  0%   { transform: scale(0); opacity: 0; }
+  30%  { transform: scale(1.2); opacity: 1; }
+  60%  { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+.pop { animation: pixelPop 0.4s steps(8) forwards; }
+
+/* ── 폭발 파티클 ── */
+.confetti-wrap { position: fixed; inset: 0; pointer-events: none; z-index: 9998; overflow: hidden; }
+.cp { position: absolute; top: -10px; width: 6px; height: 6px; animation: fall linear forwards; image-rendering: pixelated; }
+@keyframes fall { to { transform: translateY(110vh); opacity: 0; } }
+
+/* ── 점수판 느낌 상단 ── */
+.score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  color: #333366;
+  margin-bottom: 20px;
+  letter-spacing: 0.1em;
+}
+.score-row .hi { color: #ff4444; text-shadow: 0 0 6px #ff4444; }
+</style>
+</head>
+<body>
+
+<canvas id="stars"></canvas>
+
+<div class="page">
+
+  <div class="score-row">
+    <span>STAGE 2026</span>
+    <span class="hi">HI-SCORE</span>
+    <span id="scoreVal">000000</span>
+  </div>
+
+  <div class="header-wrap">
+    <div class="arcade-title">
+      PLAYER SUPPORT TEAM<br>
+      <span>HOESIK</span> SELECTOR
+    </div>
+    <span class="team-label">— INSERT COIN TO CONTINUE —</span>
+    <p class="subtitle">매월 담당자를 추첨합니다.<br>추첨된 분께서 회식 장소를 선정하고 예약을 진행해 주세요.</p>
+  </div>
+
+  <div class="pixel-line"></div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#00ff41"></div>CONFIRMED</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ffe600"></div>SELECTED</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#cc00ff"></div>REMATCH</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#222244"></div>PENDING</div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="draw-wrap" id="drawWrap">
+    <button class="draw-btn" id="drawBtn" onclick="runDraw()">▶ DRAW 5월</button>
+  </div>
+
+  <div class="done-notice" id="doneNotice">
+    ** GAME CLEAR **<br><br>
+    ALL STAGES COMPLETE!<br>
+    <span class="blink">CONGRATULATIONS!</span>
+  </div>
+
+  <div style="text-align:center; margin-top:24px;">
+    <button onclick="showResetModal()" style="font-family:'Press Start 2P',monospace; font-size:8px; background:#110000; border:none; color:#ff4444; padding:10px 18px; cursor:pointer; letter-spacing:0.08em; box-shadow: 2px 0 0 #880000, 0 2px 0 #880000, 2px 2px 0 #880000, 4px 0 0 #440000, 0 4px 0 #440000, 4px 4px 0 #440000; text-shadow: 0 0 8px #ff4444;">
+      ↺ RESET
+    </button>
+  </div>
+
+  <!-- 레트로 팝업 모달 -->
+  <div id="resetModal" style="display:none; position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,0.85); align-items:center; justify-content:center;">
+    <div style="background:#000a00; border:3px solid #00ff41; box-shadow:0 0 0 6px #000011, 0 0 0 8px #00ff41, 0 0 40px rgba(0,255,65,0.4); padding:36px 32px; text-align:center; max-width:340px; width:90%; position:relative;">
+      <div style="font-family:'Press Start 2P',monospace; font-size:11px; color:#ffe600; text-shadow:0 0 10px #ffe600; margin-bottom:24px; letter-spacing:0.06em; line-height:2;">
+        ** WARNING **
+      </div>
+      <div style="font-family:'Press Start 2P',monospace; font-size:8px; color:#00ff41; line-height:2.4; margin-bottom:28px; letter-spacing:0.04em;">
+        RESET PROGRESS?<br>
+        <span style="color:#00cc44; font-size:9px; text-shadow: 0 0 6px #00cc44;">결과는 동일하게 유지됩니다</span>
+      </div>
+      <div style="display:flex; gap:16px; justify-content:center;">
+        <button onclick="doReset()" style="font-family:'Press Start 2P',monospace; font-size:9px; background:#110000; border:none; color:#ff4444; padding:12px 20px; cursor:pointer; letter-spacing:0.06em; box-shadow:3px 0 0 #880000,0 3px 0 #880000,3px 3px 0 #880000; text-shadow:0 0 6px #ff4444;">
+          YES
+        </button>
+        <button onclick="hideResetModal()" style="font-family:'Press Start 2P',monospace; font-size:9px; background:#001100; border:none; color:#00ff41; padding:12px 20px; cursor:pointer; letter-spacing:0.06em; box-shadow:3px 0 0 #005500,0 3px 0 #005500,3px 3px 0 #005500; text-shadow:0 0 6px #00ff41;">
+          NO
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="confetti-wrap" id="confettiWrap"></div>
+
+<script>
+// ── 별 배경 ──
+(function() {
+  const canvas = document.getElementById('stars');
+  const ctx = canvas.getContext('2d');
+  let stars = [];
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  function init() {
+    stars = [];
+    for (let i = 0; i < 120; i++) {
+      stars.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        size: Math.random() < 0.8 ? 1 : 2,
+        speed: 0.2 + Math.random() * 0.6,
+        brightness: 0.3 + Math.random() * 0.7
+      });
+    }
+  }
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    stars.forEach(s => {
+      ctx.fillStyle = `rgba(${s.size > 1 ? '100,200,255' : '180,220,255'},${s.brightness})`;
+      ctx.fillRect(Math.floor(s.x), Math.floor(s.y), s.size, s.size);
+      s.y += s.speed;
+      if (s.y > canvas.height) { s.y = 0; s.x = Math.random() * canvas.width; }
+    });
+    requestAnimationFrame(draw);
+  }
+  window.addEventListener('resize', () => { resize(); init(); });
+  resize(); init(); draw();
+})();
+
+// ── 점수 카운터 ──
+let score = 0;
+function addScore(n) {
+  score += n;
+  document.getElementById('scoreVal').textContent = String(score).padStart(6,'0');
+}
+
+// ── 게임 데이터 ──
+const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+const PRESET = [
+  {name:'유동균', type:'done'},
+  {name:'정서원', type:'done'},
+  {name:'예홍옥', type:'done'},
+  {name:'차지예', type:'done'},
+];
+const FIRST = ['성낙현','김향선','권명숙','최병욱','최베라'];
+const PREV  = ['유동균','정서원','예홍옥','차지예'];
+const LS_KEY = 'hoesik-2026-revealed-v3';
+
+function seededShuffle(seed, arr) {
+  const a = [...arr];
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  for (let i = a.length - 1; i > 0; i--) {
+    h ^= h >>> 16; h = Math.imul(h, 0x45d9f3b) >>> 0;
+    h ^= h >>> 16; h = Math.imul(h, 0x45d9f3b) >>> 0;
+    const j = h % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+const FIRST_ORDER  = seededShuffle('2026-first-v3',  FIRST);
+const REPEAT_ORDER = seededShuffle('2026-repeat-v3', PREV).slice(0, 3);
+const FULL_ORDER   = [...FIRST_ORDER, ...REPEAT_ORDER];
+
+let revealed = 4;
+try { const s = localStorage.getItem(LS_KEY); if (s) revealed = Math.min(12, Math.max(4, parseInt(s))); } catch(e) {}
+
+function getType(i) {
+  if (i < 4) return 'done';
+  if (i < 9) return 'first';
+  return 'repeat';
+}
+function getName(i) {
+  if (i < 4) return PRESET[i].name;
+  return FULL_ORDER[i - 4];
+}
+function getBadge(type) {
+  return {done:'CONFIRMED', first:'', repeat:'REMATCH'}[type];
+}
+
+function renderGrid(animateIdx = -1) {
+  const g = document.getElementById('grid');
+  g.innerHTML = '';
+  for (let i = 0; i < 12; i++) {
+    const c = document.createElement('div');
+    if (i < revealed) {
+      const type = getType(i);
+      const badge = getBadge(type);
+      c.className = `card ${type}`;
+      c.innerHTML = `<div class="card-month">${MONTHS[i]}</div><div class="card-name">${getName(i)}</div>${badge ? `<div class="card-badge">${badge}</div>` : ''}`;
+      if (i === animateIdx) c.classList.add('pop');
+    } else {
+      c.className = 'card empty';
+      c.innerHTML = `<div class="card-month">${MONTHS[i]}</div><div class="card-name">???</div>`;
+    }
+    g.appendChild(c);
+  }
+}
+
+function updateUI() {
+  const btn  = document.getElementById('drawBtn');
+  const wrap = document.getElementById('drawWrap');
+  const done = document.getElementById('doneNotice');
+  if (revealed >= 12) {
+    wrap.style.display = 'none';
+    done.classList.add('visible');
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = `&#9654; DRAW ${MONTHS[revealed]}`;
+  }
+}
+
+function runDraw() {
+  const btn = document.getElementById('drawBtn');
+  btn.disabled = true;
+  btn.innerHTML = '... LOADING ...';
+
+  let flicker = 0;
+  const interval = setInterval(() => {
+    flicker++;
+    btn.innerHTML = flicker % 2 === 0 ? '* * * * *' : '- - - - -';
+  }, 80);
+
+  setTimeout(() => {
+    clearInterval(interval);
+    const newIdx = revealed;
+    revealed++;
+    try { localStorage.setItem(LS_KEY, revealed); } catch(e) {}
+    addScore(1000 + Math.floor(Math.random() * 500));
+    renderGrid(newIdx);
+    updateUI();
+    launchPixels();
+  }, 900);
+}
+
+function launchPixels() {
+  const wrap = document.getElementById('confettiWrap');
+  const colors = ['#00ff41','#ffe600','#ff00cc','#00ffff','#ff4444','#ffffff'];
+  for (let i = 0; i < 60; i++) {
+    const p = document.createElement('div');
+    p.className = 'cp';
+    p.style.cssText = `left:${Math.random()*100}%;background:${colors[Math.floor(Math.random()*colors.length)]};animation-duration:${1+Math.random()*1.5}s;animation-delay:${Math.random()*0.4}s;`;
+    wrap.appendChild(p);
+  }
+  setTimeout(() => { wrap.innerHTML = ''; }, 3000);
+}
+
+function showResetModal() {
+  const m = document.getElementById('resetModal');
+  m.style.display = 'flex';
+}
+function hideResetModal() {
+  document.getElementById('resetModal').style.display = 'none';
+}
+function doReset() {
+  try { localStorage.removeItem(LS_KEY); } catch(e) {}
+  location.reload();
+}
+
+// 이미 공개된 월에 대한 점수 계산
+score = (revealed - 4) * 1000;
+document.getElementById('scoreVal').textContent = String(score).padStart(6,'0');
+
+renderGrid();
+updateUI();
+</script>
+</body>
+</html>
